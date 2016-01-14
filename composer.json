@@ -1,0 +1,5 @@
+{
+    "require": {
+        "azhararmar/oml-payment-gateway": "dev-master"
+    }
+}
