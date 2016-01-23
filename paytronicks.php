@@ -2,7 +2,7 @@
 
 class WC_Paytronicks extends WC_Payment_Gateway
 {
-	protected $max_amount_per_order = 50000;
+	protected $max_amount_per_order = 10000;
 
 	protected $amount_per_transaction = 10000;
 
@@ -164,7 +164,6 @@ class WC_Paytronicks extends WC_Payment_Gateway
 		if ($ccExpiryMonth < 1 || $ccExpiryMonth > 12) {
 			throw new Exception(__('Invalid credit card expiry', 'paytronicks'));
 		}
-		$cardPayment = new Oml\PaymentGateway\Paytronicks\CreditCard();
 		$orderAmount = $order->order_total;
 		if ($orderAmount > $this->max_amount_per_order) {
 			throw new Exception(__('Order amount exceeded defined limit of $50,000. Please update your cart with the order amount with max $50,000', 'paytronicks'));
@@ -190,47 +189,37 @@ class WC_Paytronicks extends WC_Payment_Gateway
 			'state' => $_POST['billing_state'],
 			'zip' => $_POST['billing_postcode'],
 			'birth' => $_POST['billing_date_of_birth'],
+			'amount' => $orderAmount,
+			'order' => $orderId.'-'.rand(100, 999),
 			'ip' => $_SERVER['REMOTE_ADDR'],
 		);
-		$amounts = $this->split_order_total($orderAmount, $this->amount_per_transaction);
-		$amountWithdrawn = 0;
-		foreach ($amounts as $index => $amount) {
-			$params['order'] = $orderId.'-'.$index.'-'.rand(100, 999);
-			$params['amount'] = $amount;
-			$cardPayment->fromArray($params);
-			$payment = new Oml\PaymentGateway\Processor\Payment($cardPayment);
-			$payment->setHttpClient(new \GuzzleHttp\Client);
-			try {
-				$payment->process();
-				$httpContent = $payment->getHttpContent();
-				$xml = simplexml_load_string($httpContent, "SimpleXMLElement", LIBXML_NOCDATA);
-				$content = json_decode(json_encode($xml), true);
-				$amountWithdrawn = $amountWithdrawn + $amount;
-				if (is_array($content) && array_key_exists('response', $content)) {
-					$response = $content['response'];
-					$errorFound = false;
-					if('failed' == $response['result']) {
-						$errorFound = true;
-						$errorMessage  = 'Error ('.$response['code'].') '.$response['error'].' - ';
-						$errorMessage .= 'Total amount withdrew ('.$amountWithdrawn.')';
-						throw new Exception(__($errorMessage, 'paytronicks'));
-					}
-					// All payment withdrew successfully
-					if (count($amounts) == $index && 'success' == $response['result']) {
-						$order->add_order_note(__('Processed payment of ($'.$amountWithdrawn.') successfully', 'paytronicks'));
-						// Mark order as Paid
-						$order->payment_complete();
-						// Empty the cart (Very important step)
-						$woocommerce->cart->empty_cart();
-						// Redirect to thank you page
-						return array(
-							'result'   => 'success',
-							'redirect' => $this->get_return_url($order),
-						);
-					}
-				}
-			} catch (Exception $e) {
-				throw new Exception(__('We are currently experiencing problems trying to connect to this payment gateway. Sorry for the inconvenience - 1.', 'paytronicks'));
+		$cardPayment = new Oml\PaymentGateway\Paytronicks\CreditCard();
+		$cardPayment->fromArray($params);
+		$payment = new Oml\PaymentGateway\Processor\Payment($cardPayment);
+		$payment->setHttpClient(new \GuzzleHttp\Client);
+		$payment->process();
+		$httpContent = $payment->getHttpContent();
+		$xml = simplexml_load_string($httpContent, "SimpleXMLElement", LIBXML_NOCDATA);
+		$content = json_decode(json_encode($xml), true);
+		if (is_array($content) && array_key_exists('response', $content)) {
+			$response = $content['response'];
+			$errorFound = false;
+			if('failed' == $response['result']) {
+				$errorFound = true;
+				$errorMessage  = 'Error ('.$response['code'].') '.$response['error'];
+				throw new Exception(__($errorMessage, 'paytronicks'));
+			}
+			if ('success' == $response['result']) {
+				$order->add_order_note(__('Processed payment of ($'.$amountWithdrawn.') successfully', 'paytronicks'));
+				// Mark order as Paid
+				$order->payment_complete();
+				// Empty the cart (Very important step)
+				$woocommerce->cart->empty_cart();
+				// Redirect to thank you page
+				return array(
+					'result'   => 'success',
+					'redirect' => $this->get_return_url($order),
+				);
 			}
 		}
 		throw new Exception(__('We are currently experiencing problems trying to connect to this payment gateway. Sorry for the inconvenience - 2.', 'paytronicks'));
