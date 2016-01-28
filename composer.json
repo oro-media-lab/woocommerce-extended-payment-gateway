@@ -1,5 +1,5 @@
 {
     "require": {
-        "azhararmar/oml-payment-gateway": "dev-master"
+        "oromedialab/oml-payment-gateway": "dev-master"
     }
 }
